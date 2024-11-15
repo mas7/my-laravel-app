@@ -9,7 +9,12 @@ pipeline {
     stages {
         stage('Checkout') {
             steps {
-                git 'https://github.com/your-repo/my-laravel-app.git'
+                // Use the 'github' credentials ID
+                git(
+                    url: 'https://github.com/mas7/my-laravel-app.git',
+                    credentialsId: 'github',
+                    branch: 'main'
+                )
             }
         }
 
@@ -85,7 +90,7 @@ pipeline {
 
     post {
         always {
-            cleanWs()
+            cleanWs() // Ensure Workspace Cleanup Plugin is installed
         }
     }
 }
