@@ -1,53 +1,47 @@
 pipeline {
-    agent any
-
-    environment {
-        DOCKER_IMAGE = "laravel-app:latest"
-        LOCALSTACK_ENDPOINT = "http://localstack:4566"
-    }
+    agent none
 
     stages {
-        stage('Checkout') {
-            steps {
-                // Use the 'github' credentials ID
-                git(
-                    url: 'https://github.com/mas7/my-laravel-app.git',
-                    credentialsId: 'github',
-                    branch: 'main'
-                )
-            }
-        }
-
-        stage('Build') {
-            steps {
-                script {
-                    docker.build(DOCKER_IMAGE)
+        stage('Build and Test') {
+            agent {
+                docker {
+                    image 'docker:latest'
+                    args '-v /var/run/docker.sock:/var/run/docker.sock'
                 }
             }
-        }
-
-        stage('Run Tests') {
+            environment {
+                DOCKER_IMAGE = "laravel-app:latest"
+                LOCALSTACK_ENDPOINT = "http://localstack:4566"
+            }
             steps {
-                sh 'docker run --rm -v $(pwd):/var/www/html laravel-app php artisan test'
+                checkout scm
+
+                sh 'docker build -t $DOCKER_IMAGE .'
+
+                sh 'docker run --rm -v $(pwd):/var/www/html $DOCKER_IMAGE php artisan test'
             }
         }
 
         stage('Push to Local Docker Registry') {
+            agent any
             steps {
                 script {
-                    docker.image(DOCKER_IMAGE).push()
+                    docker.image("laravel-app:latest").push()
                 }
             }
         }
 
         stage('Deploy to LocalStack') {
+            agent any
+            environment {
+                LOCALSTACK_ENDPOINT = "http://localstack:4566"
+            }
             steps {
                 script {
-                    // Example: Push Docker image to LocalStack ECR
                     sh """
                         aws --endpoint-url=$LOCALSTACK_ENDPOINT ecr create-repository --repository-name laravel-app || true
                         aws --endpoint-url=$LOCALSTACK_ENDPOINT ecr get-login-password | docker login --username AWS --password-stdin localhost:4566
-                        docker tag $DOCKER_IMAGE:latest localhost:4566/laravel-app:latest
+                        docker tag laravel-app:latest localhost:4566/laravel-app:latest
                         docker push localhost:4566/laravel-app:latest
                     """
                 }
@@ -55,9 +49,12 @@ pipeline {
         }
 
         stage('Deploy to ECS on LocalStack') {
+            agent any
+            environment {
+                LOCALSTACK_ENDPOINT = "http://localstack:4566"
+            }
             steps {
                 script {
-                    // Example: Create ECS cluster and service in LocalStack
                     sh """
                         aws --endpoint-url=$LOCALSTACK_ENDPOINT ecs create-cluster --cluster-name laravel-cluster || true
 
@@ -90,7 +87,7 @@ pipeline {
 
     post {
         always {
-            cleanWs() // Ensure Workspace Cleanup Plugin is installed
+            cleanWs()
         }
     }
 }
